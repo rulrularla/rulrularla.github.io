@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>체스 게임</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background-color: #000;
+        color: white;
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      .container {
+        display: flex;
+        background-color: #222;
+        padding: 20px;
+        border-radius: 10px;
+        gap: 20px;
+      }
+      .sidebar {
+        width: 80px;
+        background-color: #999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 20px;
+        gap: 30px;
+        border-radius: 10px;
+      }
+      .sidebar img {
+        width: 40px;
+        cursor: pointer;
+        opacity: 0.8;
+        transition: 0.3s;
+        object-fit: contain;
+      }
+      .sidebar img:hover {
+        opacity: 1;
+      }
+      .main-screen {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .chess-board {
+        display: grid;
+        grid-template-columns: repeat(8, 64px);
+        grid-template-rows: repeat(8, 64px);
+        border: 2px solid #333;
+      }
+      .cell {
+        width: 64px;
+        height: 64px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
+      .cell.dark {
+        background-color: #444;
+      }
+      .cell.light {
+        background-color: #aaa;
+      }
+      .cell img {
+        width: 48px;
+        height: 48px;
+        pointer-events: none;
+        object-fit: contain;
+      }
+      .selected::before,
+      .highlight::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 0, 0, 0.4);
+        z-index: 0;
+      }
+      .check {
+        outline: 3px solid red;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="sidebar">
+        <img src="start-icon.png" alt="시작" id="startBtn" />
+        <img src="restart-icon.png" alt="재시작" id="restartBtn" />
+        <img src="exit-icon.png" alt="나가기" id="exitBtn" />
+        <img src="surrender-icon.png" alt="항복" id="surrenderBtn" />
+      </div>
+      <div class="main-screen">
+        <div class="chess-board" id="chessBoard"></div>
+      </div>
+    </div>
+    <script>
+      let gameStarted = false;
+      let gameOver = false;
+
+      document.getElementById("startBtn").addEventListener("click", () => {
+        if (!gameStarted) {
+          gameStarted = true;
+          gameOver = false;
+          initGame();
+        }
+      });
+
+      document.getElementById("restartBtn").addEventListener("click", () => {
+        if (gameOver) {
+          gameStarted = true;
+          gameOver = false;
+          initGame();
+        }
+      });
+
+      document.getElementById("surrenderBtn").addEventListener("click", () => {
+        if (gameStarted && !gameOver) {
+          alert(`${currentTurn === "w" ? "흑" : "백"} 승리 (상대 항복)`);
+          gameOver = true;
+        }
+      });
+
+      document.getElementById("exitBtn").addEventListener("click", () => {
+        window.location.href = "https://www.google.com";
+      });
+
+      const board = document.getElementById("chessBoard");
+      let selectedCell = null;
+      let highlights = [];
+      let currentTurn = "w";
+      let enPassantTarget = null;
+      let castlingRights;
+      let layout;
+
+      function initGame() {
+        currentTurn = "w";
+        enPassantTarget = null;
+        castlingRights = {
+          w: { K: true, Q: true },
+          b: { K: true, Q: true },
+        };
+        layout = [
+          ["r", "n", "b", "q", "k", "b", "n", "r"],
+          ["p", "p", "p", "p", "p", "p", "p", "p"],
+          [" ", " ", " ", " ", " ", " ", " ", " "],
+          [" ", " ", " ", " ", " ", " ", " ", " "],
+          [" ", " ", " ", " ", " ", " ", " ", " "],
+          [" ", " ", " ", " ", " ", " ", " ", " "],
+          ["P", "P", "P", "P", "P", "P", "P", "P"],
+          ["R", "N", "B", "Q", "K", "B", "N", "R"],
+        ];
+        createBoard();
+      }
+      function createBoard() {
+        board.innerHTML = "";
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const cell = document.createElement("div");
+            cell.classList.add("cell", (r + c) % 2 === 0 ? "light" : "dark");
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+
+            const piece = layout[r][c];
+            if (piece !== " ") {
+              const img = document.createElement("img");
+              const color = piece === piece.toUpperCase() ? "w" : "b";
+              const type = piece.toLowerCase();
+              img.src = `images/${color}${type}.png`;
+              img.alt = piece;
+              cell.appendChild(img);
+            }
+
+            cell.addEventListener("click", () => {
+              if (gameStarted && !gameOver) {
+                onCellClick(cell);
+              }
+            });
+
+            board.appendChild(cell);
+          }
+        }
+      }
+
+      function clearHighlights() {
+        highlights.forEach((cell) => cell.classList.remove("highlight"));
+        highlights = [];
+      }
+
+      function clearCheckMark() {
+        document.querySelectorAll(".cell").forEach((cell) => {
+          cell.classList.remove("check");
+        });
+      }
+
+      function findKing(color) {
+        const king = color === "w" ? "K" : "k";
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            if (layout[r][c] === king) return [r, c];
+          }
+        }
+        return null;
+      }
+
+      function isUnderAttack(row, col, color) {
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const piece = layout[r][c];
+            if (
+              piece !== " " &&
+              (piece === piece.toUpperCase()) !== (color === "w")
+            ) {
+              if (isValidMove(piece, r, c, row, col, true)) return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function checkCheckmate(color) {
+        for (let r1 = 0; r1 < 8; r1++) {
+          for (let c1 = 0; c1 < 8; c1++) {
+            const piece = layout[r1][c1];
+            if (
+              piece !== " " &&
+              (piece === piece.toUpperCase()) === (color === "w")
+            ) {
+              for (let r2 = 0; r2 < 8; r2++) {
+                for (let c2 = 0; c2 < 8; c2++) {
+                  if (isValidMove(piece, r1, c1, r2, c2)) {
+                    const temp = layout[r2][c2];
+                    layout[r2][c2] = piece;
+                    layout[r1][c1] = " ";
+                    const [kr, kc] = findKing(color);
+                    const safe = !isUnderAttack(kr, kc, color);
+                    layout[r1][c1] = piece;
+                    layout[r2][c2] = temp;
+                    if (safe) return false;
+                  }
+                }
+              }
+            }
+          }
+        }
+        return true;
+      }
+      function checkStalemate(color) {
+        const [kr, kc] = findKing(color);
+        if (isUnderAttack(kr, kc, color)) return false; // 체크 중이면 스테일메이트 아님
+
+        for (let r1 = 0; r1 < 8; r1++) {
+          for (let c1 = 0; c1 < 8; c1++) {
+            const piece = layout[r1][c1];
+            if (
+              piece !== " " &&
+              (piece === piece.toUpperCase()) === (color === "w")
+            ) {
+              for (let r2 = 0; r2 < 8; r2++) {
+                for (let c2 = 0; c2 < 8; c2++) {
+                  if (isValidMove(piece, r1, c1, r2, c2, false, color)) {
+                    return false;
+                  }
+                }
+              }
+            }
+          }
+        }
+        return true;
+      }
+
+      function showCheck(color) {
+        const [kr, kc] = findKing(color);
+        const cell = document.querySelector(
+          `[data-row="${kr}"][data-col="${kc}"]`
+        );
+        if (cell) cell.classList.add("check");
+      }
+
+      function nextTurn() {
+        clearCheckMark();
+        createBoard();
+        const opponent = currentTurn === "w" ? "b" : "w";
+        const [kr, kc] = findKing(opponent);
+
+        if (isUnderAttack(kr, kc, opponent)) {
+          showCheck(opponent);
+          if (checkCheckmate(opponent)) {
+            setTimeout(() => {
+              alert(`${currentTurn === "w" ? "백" : "흑"} 승리 (체크메이트)`);
+              gameOver = true;
+            }, 100);
+            return; // ✅ 게임 종료 시 턴 넘기지 않음
+          }
+        } else if (checkStalemate(opponent)) {
+          setTimeout(() => {
+            alert("무승부 (스테일메이트)");
+            gameOver = true;
+          }, 100);
+          return;
+        }
+
+        currentTurn = opponent; // ✅ 마지막에 턴 전환
+      }
+      function onCellClick(cell) {
+        const row = +cell.dataset.row;
+        const col = +cell.dataset.col;
+
+        if (selectedCell) {
+          const fromRow = +selectedCell.dataset.row;
+          const fromCol = +selectedCell.dataset.col;
+          const piece = layout[fromRow][fromCol];
+
+          if (cell.classList.contains("highlight")) {
+            const target = layout[row][col];
+
+            // 앙파상 처리
+            if (
+              piece.toLowerCase() === "p" &&
+              layout[row][col] === " " &&
+              fromCol !== col &&
+              enPassantTarget &&
+              row === enPassantTarget.row &&
+              col === enPassantTarget.col
+            ) {
+              const captureRow = currentTurn === "w" ? row + 1 : row - 1;
+              layout[captureRow][col] = " ";
+            }
+
+            // 캐슬링 처리
+            if (piece.toLowerCase() === "k" && Math.abs(col - fromCol) === 2) {
+              if (col === 6) {
+                layout[row][5] = layout[row][7];
+                layout[row][7] = " ";
+              } else if (col === 2) {
+                layout[row][3] = layout[row][0];
+                layout[row][0] = " ";
+              }
+              castlingRights[currentTurn].K = false;
+              castlingRights[currentTurn].Q = false;
+            }
+
+            // 이동 실행
+            layout[row][col] = piece;
+            layout[fromRow][fromCol] = " ";
+
+            // 캐슬링 권한 업데이트
+            if (piece.toLowerCase() === "k") {
+              castlingRights[currentTurn].K = false;
+              castlingRights[currentTurn].Q = false;
+            }
+            if (piece.toLowerCase() === "r") {
+              if (fromCol === 0) castlingRights[currentTurn].Q = false;
+              if (fromCol === 7) castlingRights[currentTurn].K = false;
+            }
+
+            // 앙파상 대상 설정
+            if (piece.toLowerCase() === "p" && Math.abs(row - fromRow) === 2) {
+              enPassantTarget = { row: (fromRow + row) / 2, col };
+            } else {
+              enPassantTarget = null;
+            }
+
+            clearHighlights();
+            selectedCell.classList.remove("selected");
+            selectedCell = null;
+
+            if ((piece === "P" && row === 0) || (piece === "p" && row === 7)) {
+              promptPromotion(row, col, piece === "P");
+            } else {
+              nextTurn(); // ✅ 여기에서 enPassantTarget 초기화하지 않음
+            }
+          } else {
+            selectedCell.classList.remove("selected");
+            selectedCell = null;
+            clearHighlights();
+          }
+        } else {
+          const piece = layout[row][col];
+          if (
+            piece !== " " &&
+            (piece === piece.toUpperCase()) === (currentTurn === "w")
+          ) {
+            selectedCell = cell;
+            cell.classList.add("selected");
+            clearHighlights();
+            for (let r = 0; r < 8; r++) {
+              for (let c = 0; c < 8; c++) {
+                if (isValidMove(piece, row, col, r, c)) {
+                  const dest = document.querySelector(
+                    `[data-row="${r}"][data-col="${c}"]`
+                  );
+                  dest.classList.add("highlight");
+                  highlights.push(dest);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      function isValidMove(
+        piece,
+        fr,
+        fc,
+        tr,
+        tc,
+        skipCheck = false,
+        testColor = currentTurn
+      ) {
+        const dr = tr - fr;
+        const dc = tc - fc;
+        const absDr = Math.abs(dr);
+        const absDc = Math.abs(dc);
+        const target = layout[tr][tc];
+        const isWhite = piece === piece.toUpperCase();
+
+        if (target !== " " && isWhite === (target === target.toUpperCase()))
+          return false;
+
+        let valid = false;
+
+        switch (piece.toLowerCase()) {
+          case "p":
+            const dir = isWhite ? -1 : 1;
+            const startRow = isWhite ? 6 : 1;
+            if (dc === 0 && layout[tr][tc] === " ") {
+              if (dr === dir) valid = true;
+              if (
+                fr === startRow &&
+                dr === 2 * dir &&
+                layout[fr + dir][fc] === " "
+              )
+                valid = true;
+            }
+            if (
+              absDc === 1 &&
+              dr === dir &&
+              (target !== " " ||
+                (enPassantTarget &&
+                  enPassantTarget.row === tr &&
+                  enPassantTarget.col === tc))
+            )
+              valid = true;
+            break;
+          case "r":
+            if (fr !== tr && fc !== tc) return false;
+            const stepR = dr === 0 ? 0 : dr / absDr;
+            const stepC = dc === 0 ? 0 : dc / absDc;
+            for (let i = 1; i < Math.max(absDr, absDc); i++) {
+              if (layout[fr + stepR * i][fc + stepC * i] !== " ") return false;
+            }
+            valid = true;
+            break;
+          case "n":
+            valid =
+              (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
+            break;
+          case "b":
+            if (absDr !== absDc) return false;
+            for (let i = 1; i < absDr; i++) {
+              if (layout[fr + (dr / absDr) * i][fc + (dc / absDc) * i] !== " ")
+                return false;
+            }
+            valid = true;
+            break;
+          case "q":
+            valid =
+              isValidMove(isWhite ? "R" : "r", fr, fc, tr, tc, true) ||
+              isValidMove(isWhite ? "B" : "b", fr, fc, tr, tc, true);
+            break;
+          case "k":
+            if (absDr <= 1 && absDc <= 1) {
+              valid = true;
+            } else if (dr === 0 && absDc === 2) {
+              if (dc === 2 && castlingRights[currentTurn].K) {
+                if (
+                  layout[fr][fc + 1] === " " &&
+                  layout[fr][fc + 2] === " " &&
+                  !isUnderAttack(fr, fc, currentTurn) &&
+                  !isUnderAttack(fr, fc + 1, currentTurn)
+                )
+                  valid = true;
+              }
+              if (dc === -2 && castlingRights[currentTurn].Q) {
+                if (
+                  layout[fr][fc - 1] === " " &&
+                  layout[fr][fc - 2] === " " &&
+                  layout[fr][fc - 3] === " " &&
+                  !isUnderAttack(fr, fc, currentTurn) &&
+                  !isUnderAttack(fr, fc - 1, currentTurn)
+                )
+                  valid = true;
+              }
+            }
+            break;
+        }
+
+        if (valid && !skipCheck) {
+          const backup = layout[tr][tc];
+          layout[tr][tc] = piece;
+          layout[fr][fc] = " ";
+          const [kr, kc] = findKing(testColor);
+          const safe = !isUnderAttack(kr, kc, testColor);
+          layout[fr][fc] = piece;
+          layout[tr][tc] = backup;
+          return safe;
+        }
+
+        return valid;
+      }
+
+      function promptPromotion(row, col, isWhite) {
+        const overlay = document.createElement("div");
+        overlay.style.position = "fixed";
+        overlay.style.top = 0;
+        overlay.style.left = 0;
+        overlay.style.width = "100%";
+        overlay.style.height = "100%";
+        overlay.style.background = "rgba(0,0,0,0.6)";
+        overlay.style.display = "flex";
+        overlay.style.justifyContent = "center";
+        overlay.style.alignItems = "center";
+
+        const box = document.createElement("div");
+        box.style.display = "flex";
+        box.style.gap = "10px";
+        ["q", "r", "b", "n"].forEach((type) => {
+          const img = document.createElement("img");
+          img.src = `images/${isWhite ? "w" : "b"}${type}.png`;
+          img.style.width = "48px";
+          img.style.cursor = "pointer";
+          img.onclick = () => {
+            layout[row][col] = isWhite ? type.toUpperCase() : type;
+            document.body.removeChild(overlay);
+            nextTurn();
+          };
+          box.appendChild(img);
+        });
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+      }
+
+      // 페이지 로드시 체스판은 표시되지만 게임은 시작되지 않음
+      createBoard();
+    </script>
+  </body>
+</html>
